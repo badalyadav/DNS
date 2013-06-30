@@ -1,0 +1,14 @@
+*~
+*.dat
+*.o
+*.out
+.DS_Store
+*.bak
+*.obj
+*.pdb
+*.ilk
+*.suo
+*.ncb
+*.user
+*.h.gch
+

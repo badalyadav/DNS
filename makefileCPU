@@ -1,0 +1,21 @@
+UNAME := $(shell uname)
+
+DNSMain.out: DNSMain.o problemdata.o derivative.o param.o
+	g++ -o DNSMain.out obj/DNSMain.o obj/problemdata.o obj/derivative.o obj/param.o
+
+DNSMain.o: src/DNSMain.cpp src/problemdata.h src/param.h
+	g++ -c src/DNSMain.cpp -o obj/DNSMain.o 
+	
+problemdata.o: src/problemdata.cpp src/derivative.h src/param.h
+	g++ -c src/problemdata.cpp -o obj/problemdata.o 
+	
+derivative.o: src/derivative.cpp src/param.h
+	g++ -c src/derivative.cpp -o obj/derivative.o
+	
+param.o: src/param.cpp
+	g++ -c src/param.cpp -o obj/param.o
+	
+clean:
+	rm *.o xel2d.out
+
+

@@ -1,3 +1,4 @@
+//Abstraction of problem data and CPU implementation of flux calculations
 #ifndef __PROBLEMDATA_H__
 #define __PROBLEMDATA_H__
 

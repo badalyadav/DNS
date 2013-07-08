@@ -1,11 +1,10 @@
 #include "dnscudawrapper.h"
 
-
 //global macros
 #define CUDAMAKE(var) cudaMalloc(&var, arrSize);
 #define CUDAKILL(var) cudaFree(var);
 #define CUDAMAKE5(var) cudaMalloc(&var, arrSize*5);
-#define BLOCK_DIM 10
+#define BLOCK_DIM 8
 
 #define a1 0.79926643
 #define a2 -0.18941314
@@ -43,8 +42,8 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	//declaring device variables
 	ptype *devrho, *devu, *devv, *devw, *devp, *deve, *devH, *devT; 	//primitive variables
 	ptype *devVsqr, *devCsqr;
-	ptype *devW;								//conservative variables
-	ptype *devDW1, *devDW2, *devDW3, *devDW4;	//change in flux
+	ptype *devW;														//conservative variables
+	ptype *devDW1, *devDW2, *devDW3, *devDW4;							//change in flux
 	ptype *devWc;
 	
 	CUDAMAKE(devrho); CUDAMAKE(devu); CUDAMAKE(devv); CUDAMAKE(devw); CUDAMAKE(devp); CUDAMAKE(deve); CUDAMAKE(devH); CUDAMAKE(devT);

@@ -1,6 +1,5 @@
 #include "problemdata.h"
 
-
 //Problem data function definitions
 //constructor
 ProblemData::ProblemData(int N)
@@ -145,8 +144,6 @@ void ProblemData::c2p(ptype ** Wc)
 			H[i] = e[i] + p[i]/rho[i];
 			T[i] = p[i]/(rho[i]*R);
 		}
-		
-	
 }
 
 
@@ -175,7 +172,6 @@ ptype ProblemData::getTimeStep()
 //calculates DW at a certain stage of R-K Scheme
 void ProblemData::derivs(ptype ** DW, ptype ** Wc)
 {
-	
 	//updating primitive variables
 	c2p(Wc);
 	

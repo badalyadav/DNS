@@ -1,3 +1,4 @@
+//Abstraction of derivatives used on CPU
 #ifndef __DERIVATIVE_H__
 #define __DERIVATIVE_H__
 

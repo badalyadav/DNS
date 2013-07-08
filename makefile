@@ -1,5 +1,3 @@
-UNAME := $(shell uname)
-
 DNSMain.out: DNSMain.o problemdata.o derivative.o param.o dnscudawrapper.o
 	nvcc -o DNSMain.out obj/DNSMain.o obj/problemdata.o obj/derivative.o obj/param.o obj/dnscudawrapper.o
 

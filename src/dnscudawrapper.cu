@@ -6,6 +6,9 @@
 #define CUDAMAKE5(var) cudaMalloc(&var, arrSize*5);
 #define BLOCK_DIM 8
 
+//Flag that determine the flow of program
+#define PRINT_ENERGY
+
 #define a1 0.79926643
 #define a2 -0.18941314
 #define a3 0.02651995
@@ -19,9 +22,9 @@ __constant__ ptype devkt;		//thermal conductivity
 __constant__ ptype devmu;		//viscousity
 
 //kernel functions
-__global__ void kernel_p2c(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W);
-__global__ void kernel_c2p(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W);
-__global__ void kernel_c2p(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);
+__global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//p to q & c variables
+__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W);							//c to p & q variables
+__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//c to p & q variables
 __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W, ptype *DW, ptype *Wc, ptype f);
 __global__ void kernel_timeIntegrate(ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype *DW4, ptype dt);
 
@@ -40,9 +43,10 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	size_t arrSize = Np * sizeof(ptype);
 	
 	//declaring device variables
-	ptype *devrho, *devu, *devv, *devw, *devp, *deve, *devH, *devT; 	//primitive variables
-	ptype *devVsqr, *devCsqr;
-	ptype *devW;														//conservative variables
+	ptype *devrho, *devu, *devv, *devw, *devp;							//primitive variables (referred as p variables)
+	ptype *deve, *devH, *devT; 											//extension of primitive variables... (referred as q variables)
+	ptype *devVsqr, *devCsqr;											//square variables... (referred as q variables)
+	ptype *devW;														//conservative variables	(referred as c variables)
 	ptype *devDW1, *devDW2, *devDW3, *devDW4;							//change in flux
 	ptype *devWc;
 	
@@ -65,6 +69,8 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	int gridDim = ceil((float)N/BLOCK_DIM); 
 	dim3 threadsPerBlock(BLOCK_DIM, BLOCK_DIM, BLOCK_DIM); 
 	dim3 blocksPerGrid(gridDim, gridDim, gridDim);
+	
+	printf("\nCuda active... \n");
 	printf("Block dim : %d	\nGrid dim : %d\n", BLOCK_DIM, gridDim);
 	
 	//loading constants
@@ -95,8 +101,7 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	cudaEventSynchronize(startKernel1);
 		
 	//calling kernel function for converting primitive variables to conservative
-	kernel_p2c<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT,  devW);
-	kernel_c2p<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
+	kernel_p2qc<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
 	cudaThreadSynchronize();
 	
 	for(int iter=0;iter<TARGET_ITER;iter++)
@@ -118,20 +123,20 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 		tc = dx/(Vmax + Crms);
 		tv = dx*dx/(2.0*mu);
 		dt = tv*tc/(tv+tc)*0.5;
-		
+				
 		
 		//RK-4 Scheme: calculating intermediate fluxes
 		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW , devDW1, devWc, 0.5*dt);
 		cudaThreadSynchronize();
-		kernel_c2p<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
+		kernel_c2pq<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
 		cudaThreadSynchronize();
 		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW, devDW2, devWc, 0.5*dt);
 		cudaThreadSynchronize();
-		kernel_c2p<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
+		kernel_c2pq<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
 		cudaThreadSynchronize();
 		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW, devDW3, devWc, 1.0*dt);
 		cudaThreadSynchronize();
-		kernel_c2p<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
+		kernel_c2pq<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devWc);
 		cudaThreadSynchronize();
 		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW, devDW4, devWc, 0.0);
 		cudaThreadSynchronize();
@@ -140,23 +145,23 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 		kernel_timeIntegrate<<<blocksPerGrid, threadsPerBlock>>>(devW, devWc, devDW1, devDW2, devDW3, devDW4, dt);
 		cudaThreadSynchronize();
 		
-		kernel_c2p<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
+		kernel_c2pq<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
 		cudaThreadSynchronize();
 		
-		
-		//calculation of total energy
-		cudaMemcpy(Vsqr, devVsqr, arrSize, cudaMemcpyDeviceToHost);
-		cudaThreadSynchronize();
-		Et[iter] = 0;
-		T += dt;
-		FOR(i, Np)
-		{
-			Et[iter] += Vsqr[i];
-		}
-		Et[iter] /= Np;
-		timeTotal[iter] = T;
-		/**/
-		
+		#ifdef PRINT_ENERGY
+			//calculation of total energy
+			cudaMemcpy(Vsqr, devVsqr, arrSize, cudaMemcpyDeviceToHost);
+			cudaThreadSynchronize();
+			Et[iter] = 0;
+			T += dt;
+			FOR(i, Np)
+			{
+				Et[iter] += Vsqr[i];
+			}
+			Et[iter] /= Np;
+			timeTotal[iter] = T;
+			/**/
+		#endif
 	}
 	
 	printf("Last Cuda Error : %d\n", cudaGetLastError());
@@ -195,7 +200,9 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	CUDAKILL(devW);
 	CUDAKILL(devDW1); CUDAKILL(devDW2); CUDAKILL(devDW3); CUDAKILL(devDW4); CUDAKILL(devWc);
 	
+	#ifdef PRINT_ENERGY	
 	///*
+	printf("\nResults...\n");
 	printf("Time : ");
 	FOR(i, TARGET_ITER)
 		printf("%f, ", timeTotal[i]);
@@ -206,42 +213,34 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 		printf("%f, ", Et[i]);
 	printf("\n");
 	/**/
+	#endif
 	
 }
 
-
 /////////// Kernel Functions
-__global__ void kernel_p2c(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W)
+__global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
 {
-	
+
 	//index
 	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
 	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
 	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
-	
 	int In = iZ*devN*devN + iY*devN + iX;
-		
-	ptype rhoL = rho[In];
-	ptype uL = u[In];
-	ptype vL = v[In];
-	ptype wL = w[In];
-	ptype pL = p[In];
-	
-	ptype Vsqr = (uL*uL + vL*vL + wL*wL);
-	
-	W[In] = rhoL;
-	W[devNp*1 + In] = rhoL*uL;
-	
-	ptype eL = pL/(rhoL*(GAMMA-1)) + 0.5*Vsqr;
-	
-	W[devNp*2 + In] = rhoL*vL;
-	W[devNp*3 + In] = rhoL*wL;
-	W[devNp*4 + In] = rhoL*eL;
-	
+
+	Vsqr[In] = (u[In]*u[In] + v[In]*v[In] + w[In]*w[In]);
+	Csqr[In] = GAMMA * GAMMA * p[In] * p[In] / (rho[In]*rho[In]);
+	e[In] = p[In]/(rho[In]*(GAMMA-1)) + 0.5*Vsqr[In];
+	H[In] = e[In] + p[In]/rho[In];
+	T[In] = p[In]/(rho[In]*R);
+	W[In] = rho[In];
+	W[devNp*1 + In] = rho[In]*u[In];
+	W[devNp*2 + In] = rho[In]*v[In];
+	W[devNp*3 + In] = rho[In]*w[In];
+	W[devNp*4 + In] = rho[In]*e[In];	
 	
 }
 
-__global__ void kernel_c2p(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W)
+__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W)
 {
 	
 	//index
@@ -276,7 +275,7 @@ __global__ void kernel_c2p(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, p
 }
 
 
-__global__ void kernel_c2p(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
+__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
 {
 	//index
 	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;

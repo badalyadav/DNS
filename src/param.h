@@ -16,7 +16,7 @@ using namespace std;
 		
 		//the program stops if it either hits the target time or target iteration count
 	#define TARGET_TIME 1
-	#define TARGET_ITER 1
+	#define TARGET_ITER 10
 	
 	//constants related to problem
 	#define GAMMA 	1.4

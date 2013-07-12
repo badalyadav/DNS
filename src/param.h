@@ -9,7 +9,7 @@
 #include <fstream>
 using namespace std;
 
-	#define TAG "DefaultKernel_blockSize6" //tag that appends at the end of csv file names
+	#define TAG "DefaultKernel_BlockSize6" //tag that appends at the end of csv file names
 
 	typedef double ptype;	//precision type
 	

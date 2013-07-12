@@ -23,12 +23,9 @@ __constant__ ptype devmu;		//viscousity
 
 //kernel functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//p to q & c variables
-__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W);							//c to p & q variables
-__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//c to p & q variables
 __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W, ptype *DW, ptype f, bool swap);
 __global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, 
 					ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype dt, bool swap);	//final step
-__global__ void kernel_timeIntegrate(ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype *DW4, ptype dt);
 
 //device functions
 __device__ ptype D(ptype A_3, ptype A_2, ptype A_1, ptype A1, ptype A2, ptype A3);
@@ -175,12 +172,6 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	cudaMemcpy(w, devw, arrSize, cudaMemcpyDeviceToHost);		
 	cudaMemcpy(p, devp, arrSize, cudaMemcpyDeviceToHost);
 	
-	/*
-	ptype *W = new ptype[arrSize*5];
-	cudaMemcpy(W, DW3, arrSize*5, cudaMemcpyDeviceToHost);
-	print3DArray(W);
-	*/
-	
 	
 	//capturing and timing events
 	cudaEventRecord(end);
@@ -230,77 +221,6 @@ __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 	W[devNp*2 + In] = rho[In]*v[In];
 	W[devNp*3 + In] = rho[In]*w[In];
 	W[devNp*4 + In] = rho[In]*e[In];	
-	
-}
-
-__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W)
-{
-	
-	//index
-	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
-	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
-	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
-	
-	int In = iZ*devN*devN + iY*devN + iX;
-	
-	ptype w1 = W[In];
-	ptype w2 = W[devNp*1 + In];
-	ptype w3 = W[devNp*2 + In];
-	ptype w4 = W[devNp*3 + In];
-	ptype w5 = W[devNp*4 + In];
-	
-	ptype rhoL = w1;
-	ptype uL = w2/w1;
-	ptype vL = w3/w1;
-	ptype wL = w4/w1;
-	ptype eL = w5/w1;
-	ptype Vsqr = (uL*uL + vL*vL + wL*wL);
-	ptype pL = (rhoL*(GAMMA-1))*(eL - 0.5*Vsqr);
-	
-	rho[In] = rhoL;
-	u[In] = uL;
-	v[In] = vL;
-	w[In] = wL;
-	e[In] = eL;
-	p[In] = pL;
-	H[In] = eL + pL/rhoL;
-	T[In] = pL/(rhoL*R);	
-}
-
-
-__global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
-{
-	//index
-	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
-	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
-	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
-	
-	int In = iZ*devN*devN + iY*devN + iX;
-		
-	ptype w1 = W[In];
-	ptype w2 = W[devNp*1 + In];
-	ptype w3 = W[devNp*2 + In];
-	ptype w4 = W[devNp*3 + In];
-	ptype w5 = W[devNp*4 + In];
-	
-	ptype rhoL = w1;
-	ptype uL = w2/w1;
-	ptype vL = w3/w1;
-	ptype wL = w4/w1;
-	ptype eL = w5/w1;
-	ptype VsqrL = (uL*uL + vL*vL + wL*wL);
-	ptype pL = (rhoL*(GAMMA-1))*(eL - 0.5*VsqrL);
-	
-	rho[In] = rhoL;
-	u[In] = uL;
-	v[In] = vL;
-	w[In] = wL;
-	e[In] = eL;
-	p[In] = pL;
-	H[In] = eL + pL/rhoL;
-	T[In] = pL/(rhoL*R);
-	Vsqr[In] = VsqrL;
-	Csqr[In] = GAMMA * GAMMA * pL * pL / (rhoL*rhoL);
 	
 }
 
@@ -1125,26 +1045,6 @@ __global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype 
 	W[devNp*4+In] 	= w5;
 
 }
-
-
-__global__ void kernel_timeIntegrate(ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype *DW4, ptype dt)
-{
-	
-	//index
-	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
-	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
-	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
-	
-	int In = iZ*devN*devN + iY*devN + iX;
-	
-	W[In] = W0[In] + dt/6.0*(DW1[In]+2*DW2[In]+2*DW3[In]+DW4[In]);
-	W[devNp*1+In] = W0[devNp*1+In] + dt/6.0*(DW1[devNp*1+In]+2*DW2[devNp*1+In]+2*DW3[devNp*1+In]+DW4[devNp*1+In]);
-	W[devNp*2+In] = W0[devNp*2+In] + dt/6.0*(DW1[devNp*2+In]+2*DW2[devNp*2+In]+2*DW3[devNp*2+In]+DW4[devNp*2+In]);
-	W[devNp*3+In] = W0[devNp*3+In] + dt/6.0*(DW1[devNp*3+In]+2*DW2[devNp*3+In]+2*DW3[devNp*3+In]+DW4[devNp*3+In]);
-	W[devNp*4+In] = W0[devNp*4+In] + dt/6.0*(DW1[devNp*4+In]+2*DW2[devNp*4+In]+2*DW3[devNp*4+In]+DW4[devNp*4+In]);
-	
-}
-
 
 
 //device functions

@@ -517,7 +517,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					1, 1, 1, 1, 1, 1, 1
 					)
@@ -550,7 +551,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					u[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], u[In], 
 					u[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
@@ -584,7 +586,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					v[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], v[In], 
 					v[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
@@ -599,7 +602,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					u[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[In],  
 					u[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
 					
-					sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3]
+					w[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	w[In],  
+					w[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)]
 					)
 				+
 				DABC(
@@ -609,16 +613,19 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					v[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[In], 
 					v[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
 					
-					sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx]
+					w[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], w[In], 
+					w[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	w[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)]
 					)
 				+
 				DABC(
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx]
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
 					)
 				)/dx;
 				
@@ -649,12 +656,14 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					H[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], H[In], 
 					H[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
 					)
 				)/dx;
+					
 					
 					
 	//viscous flux

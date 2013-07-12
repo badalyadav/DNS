@@ -345,26 +345,6 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 	sh1[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = u[In221];
 	sh1[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = u[In222];
 	
-	//copying v into shared memory	
-	sh2[threadIdx.z][threadIdx.y][threadIdx.x] = v[In111];
-	sh2[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In112];
-	sh2[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In121];
-	sh2[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In122];
-	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = v[In211];
-	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In212];
-	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In221];
-	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In222];
-	
-	//copying w into shared memory	
-	sh3[threadIdx.z][threadIdx.y][threadIdx.x] = w[In111];
-	sh3[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In112];
-	sh3[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In121];
-	sh3[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In122];
-	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = w[In211];
-	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In212];
-	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In221];
-	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In222];
-	
 	__syncthreads();
 	
 	//derivatives of u
@@ -400,6 +380,19 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					D(sh1[tz-3][ty][tx+3], sh1[tz-2][ty][tx+3], sh1[tz-1][ty][tx+3], sh1[tz+1][ty][tx+3], sh1[tz+2][ty][tx+3], sh1[tz+3][ty][tx+3])
 				)/(dx*dx);
 				
+				
+	//copying v into shared memory	
+	sh2[threadIdx.z][threadIdx.y][threadIdx.x] = v[In111];
+	sh2[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In112];
+	sh2[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In121];
+	sh2[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In122];
+	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = v[In211];
+	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In212];
+	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In221];
+	sh2[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In222];
+	
+	__syncthreads();
+	
 	
 	//derivatives of v
 	ptype _v = sh2[tz][ty][tx];
@@ -434,6 +427,19 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					D(sh2[tz-3][ty][tx+3], sh2[tz-2][ty][tx+3], sh2[tz-1][ty][tx+3], sh2[tz+1][ty][tx+3], sh2[tz+2][ty][tx+3], sh2[tz+3][ty][tx+3])
 				)/(dx*dx);
 				
+	
+	
+	//copying w into shared memory	
+	sh3[threadIdx.z][threadIdx.y][threadIdx.x] = w[In111];
+	sh3[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In112];
+	sh3[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In121];
+	sh3[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In122];
+	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = w[In211];
+	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In212];
+	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In221];
+	sh3[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In222];
+	
+	__syncthreads();
 	
 	//derivatives of w
 	ptype _w = sh3[tz][ty][tx];

@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 	timeRecord.N = N;
 	
 	cudaIterate(problemData->rho, problemData->u, problemData->v, problemData->w, problemData->p, problemData->kt, problemData->mu);
-	//cpuIterate();
+	cpuIterate();
 	
 	return 0;
 }

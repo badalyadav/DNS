@@ -303,177 +303,183 @@ __global__ void kernel_c2pq(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W, ptype *DW, ptype *Wc, ptype f)
 {
 
-	///////// Calculation of all relevant indices
-	int iX1 = (blockDim.x * blockIdx.x + threadIdx.x - BLOCK_DIM/2 + devN)%devN;
-	int iY1 = (blockDim.y * blockIdx.y + threadIdx.y - BLOCK_DIM/2 + devN)%devN;
-	int iZ1 = (blockDim.z * blockIdx.z + threadIdx.z - BLOCK_DIM/2 + devN)%devN;
-	int iX2 = (blockDim.x * blockIdx.x + threadIdx.x + BLOCK_DIM/2 + devN)%devN;
-	int iY2 = (blockDim.y * blockIdx.y + threadIdx.y + BLOCK_DIM/2 + devN)%devN;
-	int iZ2 = (blockDim.z * blockIdx.z + threadIdx.z + BLOCK_DIM/2 + devN)%devN;
-	
-	int In111 = iZ1*devN*devN + iY1*devN + iX1;
-	int In112 = iZ1*devN*devN + iY1*devN + iX2;
-	int In121 = iZ1*devN*devN + iY2*devN + iX1;
-	int In122 = iZ1*devN*devN + iY2*devN + iX2;
-	int In211 = iZ2*devN*devN + iY1*devN + iX1;
-	int In212 = iZ2*devN*devN + iY1*devN + iX2;
-	int In221 = iZ2*devN*devN + iY2*devN + iX1;
-	int In222 = iZ2*devN*devN + iY2*devN + iX2;
-	
 	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
 	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
 	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
 	int In = iZ*devN*devN + iY*devN + iX;
 	
-	int tx = threadIdx.x + BLOCK_DIM/2;	
-	int ty = threadIdx.y + BLOCK_DIM/2;	
-	int tz = threadIdx.z + BLOCK_DIM/2;	
-	
 	//declaring shared memory
-	__shared__ ptype sh[BLOCK_DIM*2][BLOCK_DIM*2][BLOCK_DIM*2];
 	float dx = 2*PI/devN;
 	
-	__syncthreads();	
-	
-	//copying u into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = u[In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = u[In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = u[In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = u[In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = u[In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = u[In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = u[In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = u[In222];
-	
-	__syncthreads();
-	
-	
 	//derivatives of u
-	ptype _u = sh[tz][ty][tx];
-	ptype ux = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype uy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype uz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype uxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype uyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype uzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
+	ptype _u = u[In];
+	ptype ux = D(	u[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)],   
+					u[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx);
+	ptype uy = D(	u[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)],
+					u[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx);
+	ptype uz = D(	u[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)],
+					u[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx);
+	ptype uxx = DD(	u[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], u[In],  
+					u[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], u[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx*dx);
+	ptype uyy = DD(	u[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], u[In], 
+					u[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], u[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx*dx);
+	ptype uzz = DD(	u[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], u[In], 
+					u[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], u[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx*dx);
 	ptype uxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
 	ptype uyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)])
 				)/(dx*dx);
 	ptype uzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)]),
+					D(	u[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], u[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], u[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], 
+						u[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], u[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], u[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
-				
-	__syncthreads();	
-	
-	//copying v into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = v[In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = v[In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[In222];
-	
-	__syncthreads();
 	
 	//derivatives of v
-	ptype _v = sh[tz][ty][tx];
-	ptype vx = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype vy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype vz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype vxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype vyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype vzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
+	ptype _v = v[In];
+	ptype vx = D(	v[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)],   
+					v[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx);
+	ptype vy = D(	v[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)],
+					v[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx);
+	ptype vz = D(	v[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)],
+					v[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx);
+	ptype vxx = DD(	v[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], v[In],  
+					v[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], v[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx*dx);
+	ptype vyy = DD(	v[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[In], 
+					v[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx*dx);
+	ptype vzz = DD(	v[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], v[In], 
+					v[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], v[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx*dx);
 	ptype vxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
 	ptype vyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)])
 				)/(dx*dx);
 	ptype vzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)]),
+					D(	v[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], v[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], v[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], 
+						v[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], v[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], v[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
-				
-	__syncthreads();
-	
-	
-	//copying w into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = w[In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = w[In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[In222];
-	
-	__syncthreads();
 	
 	//derivatives of w
-	ptype _w = sh[tz][ty][tx];
-	ptype wx = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype wy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype wz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype wxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype wyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype wzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
+	ptype _w = w[In];
+	ptype wx = D(	w[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)],   
+					w[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx);
+	ptype wy = D(	w[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)],
+					w[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx);
+	ptype wz = D(	w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)],
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx);
+	ptype wxx = DD(	w[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], w[In],  
+					w[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], w[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx*dx);
+	ptype wyy = DD(	w[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], w[In], 
+					w[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx*dx);
+	ptype wzz = DD(	w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx*dx);
 	ptype wxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+3+devN)%devN)]),
+					D(	w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
 	ptype wyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY-3+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY-2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY-1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+1+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+2+devN)%devN)*devN + (iX+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+3+devN)%devN)*devN + (iX+devN)%devN)])
 				)/(dx*dx);
 	ptype wzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-3+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-2+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX-1+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+1+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+2+devN)%devN)]),
+					D(	w[(((iZ-3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], w[(((iZ-2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], w[(((iZ-1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], 
+						w[(((iZ+1+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], w[(((iZ+2+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)], w[(((iZ+3+devN)%devN)*devN*devN + ((iY+devN)%devN)*devN + (iX+3+devN)%devN)])
 				)/(dx*dx);
 	
 	ptype px = D(	p[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], p[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], p[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)],   
@@ -517,7 +523,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					1, 1, 1, 1, 1, 1, 1
 					)
@@ -550,7 +557,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					u[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], u[In], 
 					u[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
@@ -584,7 +592,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					v[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], v[In], 
 					v[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
@@ -599,7 +608,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					u[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[In],  
 					u[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
 					
-					sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3]
+					w[(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	w[In],  
+					w[(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	w[(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)]
 					)
 				+
 				DABC(
@@ -609,16 +619,19 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					v[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[In], 
 					v[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
 					
-					sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx]
+					w[(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], w[In], 
+					w[(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], w[(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	w[(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)]
 					)
 				+
 				DABC(
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx]
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
 					)
 				)/dx;
 				
@@ -649,7 +662,8 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 					rho[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[In], 
 					rho[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
+					w[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], w[In], 
+					w[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], w[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
 					
 					H[(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], H[In], 
 					H[(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
@@ -691,7 +705,6 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 	Wc[devNp*4 + In] = W[devNp*4 + In] - f*(C5 - V5);
 	
 	//rho[In] = p[In];
-		
 }
 
 

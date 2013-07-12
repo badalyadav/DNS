@@ -9,9 +9,11 @@
 #include <fstream>
 using namespace std;
 
+	#define TAG "Master" //tag that appends at the end of csv file names
+
 	typedef double ptype;	//precision type
 	
-	#define INIT_FILE_NAME "Init_hom_iso_binary63.dat"
+	#define INIT_FILE_NAME "ProblemDataFiles/Init_hom_iso_binary63.dat"
 	#define PI 3.14159265359
 		
 		//the program stops if it either hits the target time or target iteration count
@@ -102,8 +104,11 @@ public:
 	
 	~TimeRecord()
 	{
-		
-		fstream timeFile("Time.csv", ios::out | ios::app);
+		string fileName = "Results/Time_";
+		fileName = fileName + TAG + ".csv";
+		fstream timeFile(fileName.c_str(), ios::out | ios::app);
+		if(timeFile.tellg() == 0)
+			timeFile<<"N, Time Steps, Total CPU Time, Total GPU Time, H2DCopyTime, D2HCopyTime, Kernel Time, Actual Speedup, Effective Speedup\n";
 		timeFile<<N<<", "<<TARGET_ITER<<", "<<totalCPUTime<<", "<<totalGPUTime<<", "<<memCopy1Time<<", "<<memCopy2Time<<", "<<kernel1Time<<", "<<totalCPUTime/kernel1Time<<", "<<totalCPUTime/totalGPUTime<<"\n";
 		timeFile.close();
 	}

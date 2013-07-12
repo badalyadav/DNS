@@ -194,7 +194,9 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	
 	//printing time-energy data to file
 	#ifdef PRINT_ENERGY	
-	fstream energyFile("EnergyProfile.csv", ios::out | ios::trunc);
+	string fileName = "Results/EnergyProfile_";
+	fileName = fileName + TAG + ".csv";
+	fstream energyFile(fileName.c_str(), ios::out | ios::trunc);
 	energyFile<<"Time, Results\n";
 	FOR(i, TARGET_ITER)
 		energyFile<<timeTotal[i]<<", "<<Et[i]<<"\n";

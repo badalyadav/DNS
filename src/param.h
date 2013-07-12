@@ -9,7 +9,7 @@
 #include <fstream>
 using namespace std;
 
-	#define TAG "Master" //tag that appends at the end of csv file names
+	#define TAG "DefaultKernel_BlockSize8" //tag that appends at the end of csv file names
 
 	typedef double ptype;	//precision type
 	

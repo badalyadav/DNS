@@ -177,13 +177,8 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	cudaMemcpy(w, devw, arrSize, cudaMemcpyDeviceToHost);		
 	cudaMemcpy(p, devp, arrSize, cudaMemcpyDeviceToHost);
 	
-	/*
-	ptype *W = new ptype[arrSize*5];
-	cudaMemcpy(W, devW , arrSize*5, cudaMemcpyDeviceToHost);
-	print3DArray(&W[Np*1]);
-	*/
 	
-	
+	//capturing and timing events
 	cudaEventRecord(end);
 	cudaEventSynchronize(end);
 	
@@ -192,27 +187,18 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	cudaEventElapsedTime(&timeRecord.memCopy2Time, endKernel1, end);
 	cudaEventElapsedTime(&timeRecord.totalGPUTime, start, end);
 	
-	//print3DArray(rho);
-	//printf("%f\n", rho[1]);
-	
 	//freeing memory
 	CUDAKILL(devrho); CUDAKILL(devu); CUDAKILL(devv); CUDAKILL(devw); CUDAKILL(devp); CUDAKILL(deve); CUDAKILL(devH); CUDAKILL(devT);
 	CUDAKILL(devW);
 	CUDAKILL(devDW1); CUDAKILL(devDW2); CUDAKILL(devDW3); CUDAKILL(devDW4); CUDAKILL(devWc);
 	
+	//printing time-energy data to file
 	#ifdef PRINT_ENERGY	
-	///*
-	printf("\nResults...\n");
-	printf("Time : ");
+	fstream energyFile("EnergyProfile.csv", ios::out | ios::trunc);
+	energyFile<<"Time, Results\n";
 	FOR(i, TARGET_ITER)
-		printf("%f, ", timeTotal[i]);
-	printf("\n");
-	
-	printf("Energy : ");
-	FOR(i, TARGET_ITER)
-		printf("%f, ", Et[i]);
-	printf("\n");
-	/**/
+		energyFile<<timeTotal[i]<<", "<<Et[i]<<"\n";
+	energyFile.close();
 	#endif
 	
 }

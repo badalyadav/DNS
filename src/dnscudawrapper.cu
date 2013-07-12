@@ -4,7 +4,7 @@
 #define CUDAMAKE(var) cudaMalloc(&var, arrSize);
 #define CUDAKILL(var) cudaFree(var);
 #define CUDAMAKE5(var) cudaMalloc(&var, arrSize*5);
-#define BLOCK_DIM 8
+#define BLOCK_DIM 6
 
 //Flag that determine the flow of program
 #define PRINT_ENERGY

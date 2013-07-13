@@ -39,6 +39,9 @@ void loadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz)
 void unloadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);
 void loadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);	//copying data to-&-from arrays with margins extended to provide warping
 void unloadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);
+void loadCubicFlux(ptype *WHst[5], ptype *devW, int icx, int icy, int icz);
+void unloadCubixFlux(ptype *WHst[5], ptype *devW, int icx, int icy, int icz);
+
 
 //kernel functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//p to q & c variables
@@ -76,8 +79,8 @@ void cudaIterate(ProblemData *prob)
 	//pointers used for loading & unloading memory chuncks
 	ptype *primitiveHost[5] = {prob->rho, prob->u, prob->v, prob->w, prob->p};
 	ptype *primitiveDev[5]  = {devrho, devu, devv, devw, devp};
-	ptype *primitive2Host[5] = {prob->e, prob->H, prob->T, prob->Vsqr, prob->Csqr};
-	ptype *primitive2Dev[5]  = {deve, devH, devT, devVsqr, devCsqr};
+	ptype *qcHost[5] = {prob->e, prob->H, prob->T, prob->Vsqr, prob->Csqr};
+	ptype *qcDev[5]  = {deve, devH, devT, devVsqr, devCsqr};
 	
 	//host variables used for calculating time-step
 	ptype tc, tv, dt;
@@ -115,6 +118,7 @@ void cudaIterate(ProblemData *prob)
 	cudaEventRecord(start);
 	cudaEventSynchronize(start);
 	
+	ptype *temp;
 	//calling kernel function for converting primitive variables to conservative
 	FOR(icz, nC)
 		FOR(icy, nC)
@@ -123,47 +127,30 @@ void cudaIterate(ProblemData *prob)
 				loadCubicData(primitiveHost, primitiveDev, 5, icx, icy, icz);
 				kernel_p2qc<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
 				cudaThreadSynchronize();
-				unloadCubicData(primitive2Host, primitive2Dev, 5, icx, icy, icz);
+				unloadCubicData(qcHost, qcDev, 5, icx, icy, icz);
+				unloadCubixFlux(prob->W, devW, icx, icy, icz);
 			}
 	
-	Crms = 0;
-	Vmax = 0;
-	FOR(i, Np)
-	{
-		Crms += prob->Csqr[i];
-		if(prob->Vsqr[i]>Vmax)
-			Vmax = prob->Vsqr[i];
-	}
+	print3DArray(prob->W[4]);
 	
-	Crms = sqrt(Crms/Np);
-	Vmax = sqrt(Vmax);
-	tc = dx/(Vmax + Crms);
-	tv = dx*dx/(2.0*prob->mu);
-	dt = tv*tc/(tv+tc)*0.5;
-	printf("time step : %f\t", dt);
-	
-	/*
 	for(int iter=0;iter<TARGET_ITER;iter++)
 	{
 		
-		//calculation of time
-		cudaMemcpy(Vsqr, devVsqr, arrSize, cudaMemcpyDeviceToHost);		
-		cudaMemcpy(Csqr, devCsqr, arrSize, cudaMemcpyDeviceToHost);
 		Crms = 0;
 		Vmax = 0;
 		FOR(i, Np)
 		{
-			Crms += Csqr[i];
-			if(Vsqr[i]>Vmax)
-				Vmax = Vsqr[i];
+			Crms += prob->Csqr[i];
+			if(prob->Vsqr[i]>Vmax)
+				Vmax = prob->Vsqr[i];
 		}
 		Crms = sqrt(Crms/Np);
 		Vmax = sqrt(Vmax);
 		tc = dx/(Vmax + Crms);
-		tv = dx*dx/(2.0*mu);
+		tv = dx*dx/(2.0*prob->mu);
 		dt = tv*tc/(tv+tc)*0.5;
 				
-		
+		/*
 		//RK-4 Scheme: calculating intermediate fluxes
 		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW , devDW1, 0.5*dt, swap);
 		cudaThreadSynchronize();
@@ -194,8 +181,8 @@ void cudaIterate(ProblemData *prob)
 			Et[iter] /= Np;
 			timeTotal[iter] = T;
 		#endif
+		* */
 	}
-	*/
 	
 	printf("Last Cuda Error : %d\n", cudaGetLastError());
 	
@@ -326,8 +313,10 @@ void unloadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int
 	FOR(i, n)
 	{
 		hstTemp[i] = new ptype[gridNp];
-		cudaMemcpy(dev[i], hstTemp[i], arrSizeExt, cudaMemcpyHostToDevice);	
+		cudaMemcpy(dev[i], hstTemp[i], arrSizeExt, cudaMemcpyDeviceToHost);	
 	}
+	
+	print3DArray(hstTemp);
 		
 	FOR(iz, gridNExt)
 		FOR(iy, gridNExt)
@@ -349,6 +338,55 @@ void unloadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int
 	
 }
 
+void loadCubicFlux(ptype *WHst[5], ptype *devW, int icx, int icy, int icz)
+{
+	
+	ptype *WHstTemp = new ptype[gridNp*5];
+	
+	FOR(iz, gridN)
+		FOR(iy, gridN)
+			FOR(ix, gridN)
+			{
+				int i1 = iz*gridN*gridN + iy*gridN + ix;
+				
+				int ix2 = (icx*gridN + ix + N)%N;
+				int iy2 = (icy*gridN + iy + N)%N;
+				int iz2 = (icz*gridN + iz + N)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, 5)
+					WHstTemp[i*gridNp + i1] = WHst[i][i2];
+			}
+	
+	cudaMemcpy(devW, WHstTemp, arrSize*5, cudaMemcpyHostToDevice);	
+	
+}
+
+
+void unloadCubixFlux(ptype *WHst[5], ptype *devW, int icx, int icy, int icz)
+{
+	ptype *WHstTemp = new ptype[gridNp*5];
+	cudaMemcpy(WHstTemp, devW, arrSize*5, cudaMemcpyDeviceToHost);	
+	
+	FOR(iz, gridN)
+		FOR(iy, gridN)
+			FOR(ix, gridN)
+			{
+				int i1 = iz*gridN*gridN + iy*gridN + ix;
+				
+				int ix2 = (icx*gridN + ix + N)%N;
+				int iy2 = (icy*gridN + iy + N)%N;
+				int iz2 = (icz*gridN + iz + N)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, 5)
+					WHst[i][i2] = WHstTemp[i*gridNp + i1];
+			}
+	
+	
+}
+
+
 /////////// Kernel Functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
 {
@@ -364,7 +402,8 @@ __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 	e[In] = p[In]/(rho[In]*(GAMMA-1)) + 0.5*Vsqr[In];
 	H[In] = e[In] + p[In]/rho[In];
 	T[In] = p[In]/(rho[In]*R);
-	W[In] = rho[In];
+	
+	W[In] = In;
 	W[devNp*1 + In] = rho[In]*u[In];
 	W[devNp*2 + In] = rho[In]*v[In];
 	W[devNp*3 + In] = rho[In]*w[In];

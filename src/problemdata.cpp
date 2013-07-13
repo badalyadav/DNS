@@ -17,6 +17,7 @@ ProblemData::ProblemData(int N)
 	MAKE(p);
 	MAKE(e);
 	MAKE(Vsqr);
+	MAKE(Csqr);
 	MAKE(H);
 	MAKE(T);
 	
@@ -64,6 +65,7 @@ ProblemData::~ProblemData()
 	KILL(p);
 	KILL(e);
 	KILL(Vsqr);
+	KILL(Csqr);
 	KILL(H);
 	KILL(T);
 

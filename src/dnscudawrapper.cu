@@ -1,7 +1,8 @@
 #include "dnscudawrapper.h"
 
 //global macros
-#define CUDAMAKE(var) cudaMalloc(&var, arrSize*2);	//maintains a double array for swapping
+#define CUDAMAKE(var) cudaMalloc(&var, arrSize);	//maintains a double array for swapping
+#define CUDAMAKE_(var) cudaMalloc(&var, arrSize_);	//maintains a double array for swapping
 #define CUDAKILL(var) cudaFree(var);
 #define CUDAMAKE5(var) cudaMalloc(&var, arrSize*5);
 #define BLOCK_DIM 8
@@ -17,9 +18,27 @@
 #define b3 0.1/9.0
 
 //cuda constant variables
-__constant__ int devN, devNp;	//number of points
-__constant__ ptype devkt;		//thermal conductivity
-__constant__ ptype devmu;		//viscousity
+__constant__ int devN, devNp;		//number of points
+__constant__ int devNExt, devNpExt;	//number of points with margins extended to provide warping
+__constant__ ptype devkt;			//thermal conductivity
+__constant__ ptype devmu;			//viscousity
+
+
+//the data will be divided in cubic grids of size "gridN"
+int gridN = 8;
+int gridNp = gridN*gridN*gridN;
+int gridNExt = gridN + BLOCK_DIM;						//extended grid including warped margins
+int gridNpExt = gridNExt*gridNExt*gridNExt;	
+	
+//calculating standard array size in bytes
+size_t arrSize  = gridNp * sizeof(ptype);
+size_t arrSizeExt = gridNpExt * sizeof(ptype);
+
+//Host function
+void loadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);
+void unloadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);
+void loadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);	//copying data to-&-from arrays with margins extended to provide warping
+void unloadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz);
 
 //kernel functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//p to q & c variables
@@ -36,30 +55,32 @@ __device__ ptype DABC(  ptype A_3, ptype A_2, ptype A_1, ptype A0, ptype A1, pty
 
 
 //central function for performing dns iteration on CUDA
-void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, ptype mu)
+void cudaIterate(ProblemData *prob)
 {
-	//calculating standard array size in bytes
-	size_t arrSize = Np * sizeof(ptype);
 	
-	//declaring device variables
 	ptype *devrho, *devu, *devv, *devw, *devp;							//primitive variables (referred as p variables)
-	ptype *deve, *devH, *devT; 											//extension of primitive variables... (referred as q variables)
+	ptype *deve, *devH, *devT;											//extension of primitive variables... (referred as q variables)
 	ptype *devVsqr, *devCsqr;											//square variables... (referred as q variables)
 	ptype *devW;														//conservative variables	(referred as c variables)
 	ptype *devDW1, *devDW2, *devDW3;									//change in flux
 	ptype *devW0;
 	bool swap = false;													//flag used for swapping between the double arrays
 	
-	CUDAMAKE(devrho); CUDAMAKE(devu); CUDAMAKE(devv); CUDAMAKE(devw); CUDAMAKE(devp); CUDAMAKE(deve); CUDAMAKE(devH); CUDAMAKE(devT);
+	CUDAMAKE(devrho); CUDAMAKE(devu); CUDAMAKE(devv); CUDAMAKE(devw); CUDAMAKE(devp); 
+	CUDAMAKE(deve); CUDAMAKE(devH); CUDAMAKE(devT);
 	CUDAMAKE(devVsqr); CUDAMAKE(devCsqr);
 	CUDAMAKE5(devW);
 	CUDAMAKE5(devDW1); CUDAMAKE5(devDW2); CUDAMAKE5(devDW3); 
 	CUDAMAKE5(devW0);
 	
-	//host variables
+	//pointers used for loading & unloading memory chuncks
+	ptype *primitiveHost[5] = {prob->rho, prob->u, prob->v, prob->w, prob->p};
+	ptype *primitiveDev[5]  = {devrho, devu, devv, devw, devp};
+	ptype *primitive2Host[5] = {prob->e, prob->H, prob->T, prob->Vsqr, prob->Csqr};
+	ptype *primitive2Dev[5]  = {deve, devH, devT, devVsqr, devCsqr};
+	
+	//host variables used for calculating time-step
 	ptype tc, tv, dt;
-	ptype *Vsqr = new ptype[Np];
-	ptype *Csqr = new ptype[Np];
 	ptype Et[TARGET_ITER], timeTotal[TARGET_ITER];
 	ptype T=0;
 	ptype Crms;
@@ -67,44 +88,61 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	ptype dx = 2*PI/N;
 	
 	//calculating thread and block count
-	int gridDim = ceil((float)N/BLOCK_DIM); 
+	int gridDim = ceil((float)gridN/BLOCK_DIM); 
 	dim3 threadsPerBlock(BLOCK_DIM, BLOCK_DIM, BLOCK_DIM); 
 	dim3 blocksPerGrid(gridDim, gridDim, gridDim);
 	
 	printf("\nCuda active... \n");
 	printf("Block dim : %d	\nGrid dim : %d\n", BLOCK_DIM, gridDim);
 	
+	//calculation of cubic block counts
+	int nC = ceil((float)N/gridN); 
+	printf("No of cubic blocks : %dx%dx%d\n", nC, nC, nC);
+	
 	//loading constants
-	cudaMemcpyToSymbol(devN , &N, sizeof(int));
-	cudaMemcpyToSymbol(devNp, &Np, sizeof(int));
-	cudaMemcpyToSymbol(devkt, &kt, sizeof(ptype));
-	cudaMemcpyToSymbol(devmu, &mu, sizeof(ptype));
+	cudaMemcpyToSymbol(devN , &gridN, sizeof(int));
+	cudaMemcpyToSymbol(devNp, &gridNp, sizeof(int));
+	cudaMemcpyToSymbol(devNExt , &gridNExt, sizeof(int));
+	cudaMemcpyToSymbol(devNpExt, &gridNpExt, sizeof(int));
+	cudaMemcpyToSymbol(devkt, &prob->kt, sizeof(ptype));
+	cudaMemcpyToSymbol(devmu, &prob->mu, sizeof(ptype));
 		
 	//cuda events
-	cudaEvent_t start, startKernel1, endKernel1, end;
+	cudaEvent_t start, end;
 	cudaEventCreate(&start);
-	cudaEventCreate(&startKernel1);
-	cudaEventCreate(&endKernel1);
 	cudaEventCreate(&end);
 	
 	cudaEventRecord(start);
 	cudaEventSynchronize(start);
 	
-	//copying memory from host to device
-	cudaMemcpy(devrho, rho, arrSize, cudaMemcpyHostToDevice);		
-	cudaMemcpy(devu, u, arrSize, cudaMemcpyHostToDevice);		
-	cudaMemcpy(devv, v, arrSize, cudaMemcpyHostToDevice);		
-	cudaMemcpy(devw, w, arrSize, cudaMemcpyHostToDevice);		
-	cudaMemcpy(devp, p, arrSize, cudaMemcpyHostToDevice);		
-	
-	//mem copy finished
-	cudaEventRecord(startKernel1);
-	cudaEventSynchronize(startKernel1);
-		
 	//calling kernel function for converting primitive variables to conservative
-	kernel_p2qc<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
-	cudaThreadSynchronize();
+	FOR(icz, nC)
+		FOR(icy, nC)
+			FOR(icx, nC)
+			{
+				loadCubicData(primitiveHost, primitiveDev, 5, icx, icy, icz);
+				kernel_p2qc<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
+				cudaThreadSynchronize();
+				unloadCubicData(primitive2Host, primitive2Dev, 5, icx, icy, icz);
+			}
 	
+	Crms = 0;
+	Vmax = 0;
+	FOR(i, Np)
+	{
+		Crms += prob->Csqr[i];
+		if(prob->Vsqr[i]>Vmax)
+			Vmax = prob->Vsqr[i];
+	}
+	
+	Crms = sqrt(Crms/Np);
+	Vmax = sqrt(Vmax);
+	tc = dx/(Vmax + Crms);
+	tv = dx*dx/(2.0*prob->mu);
+	dt = tv*tc/(tv+tc)*0.5;
+	printf("time step : %f\t", dt);
+	
+	/*
 	for(int iter=0;iter<TARGET_ITER;iter++)
 	{
 		
@@ -155,31 +193,17 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 			}
 			Et[iter] /= Np;
 			timeTotal[iter] = T;
-			/**/
 		#endif
 	}
+	*/
 	
 	printf("Last Cuda Error : %d\n", cudaGetLastError());
-	
-	//kernel 1 finished
-	cudaEventRecord(endKernel1);
-	cudaEventSynchronize(endKernel1);
-	
-	//copying back primitve variables
-	cudaMemcpy(rho, devrho, arrSize, cudaMemcpyDeviceToHost);		
-	cudaMemcpy(u, devu, arrSize, cudaMemcpyDeviceToHost);		
-	cudaMemcpy(v, devv, arrSize, cudaMemcpyDeviceToHost);		
-	cudaMemcpy(w, devw, arrSize, cudaMemcpyDeviceToHost);		
-	cudaMemcpy(p, devp, arrSize, cudaMemcpyDeviceToHost);
 	
 	
 	//capturing and timing events
 	cudaEventRecord(end);
 	cudaEventSynchronize(end);
 	
-	cudaEventElapsedTime(&timeRecord.memCopy1Time, start, startKernel1);
-	cudaEventElapsedTime(&timeRecord.kernel1Time, startKernel1, endKernel1);
-	cudaEventElapsedTime(&timeRecord.memCopy2Time, endKernel1, end);
 	cudaEventElapsedTime(&timeRecord.totalGPUTime, start, end);
 	
 	//freeing memory
@@ -187,6 +211,7 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	CUDAKILL(devW);
 	CUDAKILL(devDW1); CUDAKILL(devDW2); CUDAKILL(devDW3);
 	CUDAKILL(devW0);
+	
 	
 	//printing time-energy data to file
 	#ifdef PRINT_ENERGY	
@@ -201,6 +226,129 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	
 }
 
+void loadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz)
+{
+	
+	//creating temp array
+	ptype *hstTemp[n];
+	FOR(i, n)
+		hstTemp[i] = new ptype[gridNp];
+		
+	FOR(iz, gridN)
+		FOR(iy, gridN)
+			FOR(ix, gridN)
+			{
+				int i1 = iz*gridN*gridN + iy*gridN + ix;
+				
+				int ix2 = (icx*gridN + ix)%N;
+				int iy2 = (icy*gridN + iy)%N;
+				int iz2 = (icz*gridN + iz)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, n)
+					hstTemp[i][i1] = hst[i][i2];
+				
+			}	
+	
+	FOR(i, n)
+	{
+		cudaMemcpy(dev[i], hstTemp[i], arrSize, cudaMemcpyHostToDevice);	
+		delete [] hstTemp[i];
+	}
+		
+}
+
+void unloadCubicData(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz)
+{
+	
+	//creating temp array
+	ptype *hstTemp[n];
+	FOR(i, n)
+	{
+		hstTemp[i] = new ptype[gridNpExt];
+		cudaMemcpy(hstTemp[i], dev[i], arrSize, cudaMemcpyDeviceToHost);	
+	}
+		
+	FOR(iz, gridN)
+		FOR(iy, gridN)
+			FOR(ix, gridN)
+			{
+				int i1 = iz*gridN*gridN + iy*gridN + ix;
+				
+				int ix2 = (icx*gridN + ix)%N;
+				int iy2 = (icy*gridN + iy)%N;
+				int iz2 = (icz*gridN + iz)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, n)
+					hst[i][i2] = hstTemp[i][i1];
+			}	
+	
+	FOR(i, n)
+		delete [] hstTemp[i];	
+	
+}
+
+void loadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz)
+{
+	//creating temp array
+	ptype *hstTemp[n];
+	FOR(i, n)
+		hstTemp[i] = new ptype[gridNp];
+		
+	FOR(iz, gridNExt)
+		FOR(iy, gridNExt)
+			FOR(ix, gridNExt)
+			{
+				int i1 = iz*gridNExt*gridNExt + iy*gridNExt + ix;
+				
+				int ix2 = (icx*gridN + ix - BLOCK_DIM/2 + N)%N;
+				int iy2 = (icy*gridN + iy - BLOCK_DIM/2 + N)%N;
+				int iz2 = (icz*gridN + iz - BLOCK_DIM/2 + N)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, n)
+					hstTemp[i][i1] = hst[i][i2];
+				
+			}	
+	
+	FOR(i, n)
+	{
+		cudaMemcpy(dev[i], hstTemp[i], arrSizeExt, cudaMemcpyHostToDevice);	
+		delete [] hstTemp[i];
+	}
+}
+
+void unloadCubicDataExt(ptype *hst[], ptype *dev[], int n, int icx, int icy, int icz)
+{
+	//creating temp array
+	ptype *hstTemp[n];
+	FOR(i, n)
+	{
+		hstTemp[i] = new ptype[gridNp];
+		cudaMemcpy(dev[i], hstTemp[i], arrSizeExt, cudaMemcpyHostToDevice);	
+	}
+		
+	FOR(iz, gridNExt)
+		FOR(iy, gridNExt)
+			FOR(ix, gridNExt)
+			{
+				int i1 = iz*gridNExt*gridNExt + iy*gridNExt + ix;
+				
+				int ix2 = (icx*gridN + ix - BLOCK_DIM/2 + N)%N;
+				int iy2 = (icy*gridN + iy - BLOCK_DIM/2 + N)%N;
+				int iz2 = (icz*gridN + iz - BLOCK_DIM/2 + N)%N;
+				int i2 = iz2*N*N + iy2*N + ix2;
+				
+				FOR(i, n)
+					hst[i][i2] = hstTemp[i][i1];
+			}	
+	
+	FOR(i, n)
+		delete [] hstTemp[i];
+	
+}
+
 /////////// Kernel Functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W)
 {
@@ -210,7 +358,7 @@ __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
 	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
 	int In = iZ*devN*devN + iY*devN + iX;
-
+	
 	Vsqr[In] = (u[In]*u[In] + v[In]*v[In] + w[In]*w[In]);
 	Csqr[In] = GAMMA * GAMMA * p[In] * p[In] / (rho[In]*rho[In]);
 	e[In] = p[In]/(rho[In]*(GAMMA-1)) + 0.5*Vsqr[In];
@@ -221,6 +369,7 @@ __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 	W[devNp*2 + In] = rho[In]*v[In];
 	W[devNp*3 + In] = rho[In]*w[In];
 	W[devNp*4 + In] = rho[In]*e[In];	
+	
 	
 }
 

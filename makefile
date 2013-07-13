@@ -13,7 +13,7 @@ derivative.o: src/derivative.cpp src/derivative.h src/param.h
 param.o: src/param.cpp src/param.h
 	g++ -c src/param.cpp -o obj/param.o 
 	
-dnscudawrapper.o:	src/dnscudawrapper.cu src/dnscudawrapper.h
+dnscudawrapper.o:	src/dnscudawrapper.cu src/dnscudawrapper.h src/problemdata.h
 	nvcc -c src/dnscudawrapper.cu -o obj/dnscudawrapper.o -arch sm_20
 	
 clean:

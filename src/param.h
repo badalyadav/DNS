@@ -13,7 +13,7 @@ using namespace std;
 
 	typedef double ptype;	//precision type
 	
-	#define INIT_FILE_NAME "ProblemDataFiles/Init_hom_iso_binary63.dat"
+	#define INIT_FILE_NAME "ProblemDataFiles/Init_hom_iso_binary15.dat"
 	#define PI 3.14159265359
 		
 		//the program stops if it either hits the target time or target iteration count
@@ -69,21 +69,22 @@ using namespace std;
 		return sum;	
 	}
 	
-	template <typename T> void print3DArray(T *arr)	//print a 3D array
+	template <typename T> void print3DArray(T *arr, int N = ::N)	//print a 3D array
 	{
+		fstream timeFile("3Darray.csv", ios::out | ios::trunc);
 		//calculating sum of an array
 		FOR(z, N)
 		{
+			timeFile<<z<<"\n";
 			FOR(y, N)
 			{
-				printf("(Z=%d, Y=%d)\n", z, y);
 				FOR(x, N)
 				{
-					printf("%f\t", (float)arr[I]);
+					timeFile<<arr[I]<<", ";
 				}
-				printf("\n");
+				timeFile<<"\n";
 			}
-			printf("\n");
+			timeFile<<"\n";
 		}
 	}
 	

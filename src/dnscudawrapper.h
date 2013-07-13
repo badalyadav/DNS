@@ -4,8 +4,9 @@
 #define __DNSCUDAWRAPPER_H__
 
 #include "param.h"
+#include "problemdata.h"
 
-void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, ptype mu);
+void cudaIterate(ProblemData *prob);
 
 #endif
 

@@ -19,7 +19,7 @@ public:
 	ptype kt;						//thermal conductivity
 	
 	ptype *W[5];									//conservative variables
-	ptype *rho, *v, *u, *w, *p, *e, *Vsqr, *H, *T;	//primitive variables
+	ptype *rho, *v, *u, *w, *p, *e, *Vsqr, *Csqr, *H, *T;	//primitive variables
 		
 	ProblemData(int N);
 	~ProblemData();

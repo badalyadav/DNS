@@ -13,7 +13,7 @@ using namespace std;
 
 	typedef double ptype;	//precision type
 	
-	#define INIT_FILE_NAME "ProblemDataFiles/Init_hom_iso_binary15.dat"
+	#define INIT_FILE_NAME "ProblemDataFiles/Init_hom_iso_binary255.dat"
 	#define PI 3.14159265359
 		
 		//the program stops if it either hits the target time or target iteration count

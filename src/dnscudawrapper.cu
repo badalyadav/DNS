@@ -51,9 +51,6 @@ __global__ void kernel_derives(ptype *rhoExt, ptype *uExt, ptype *vExt, ptype *w
 __global__ void kernel_derivesF(ptype *rhoExt, ptype *uExt, ptype *vExt, ptype *wExt, ptype *pExt, ptype *HExt, ptype *TExt, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, 
 								ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W, ptype dt);
 								
-__global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, 
-					ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype dt, bool swap);	//final step
-
 //device functions
 __device__ ptype D(ptype A_3, ptype A_2, ptype A_1, ptype A1, ptype A2, ptype A3);
 __device__ ptype DD(ptype A_3, ptype A_2, ptype A_1, ptype A0, ptype A1, ptype A2, ptype A3);

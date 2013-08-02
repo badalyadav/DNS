@@ -23,9 +23,8 @@ __constant__ ptype devmu;		//viscousity
 
 //kernel functions
 __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W);	//p to q & c variables
-__global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W, ptype *DW, ptype f, bool swap);
-__global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, 
-					ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype dt, bool swap);	//final step
+__global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W, ptype *Wt, ptype f, ptype dt, bool swap, bool ifFinalize = false);
+
 
 //device functions
 __device__ ptype D(ptype A_3, ptype A_2, ptype A_1, ptype A1, ptype A2, ptype A3);
@@ -46,28 +45,26 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	ptype *deve, *devH, *devT; 											//extension of primitive variables... (referred as q variables)
 	ptype *devVsqr, *devCsqr;											//square variables... (referred as q variables)
 	ptype *devW;														//conservative variables	(referred as c variables)
-	ptype *devDW1, *devDW2, *devDW3;									//change in flux
-	ptype *devW0;
+	ptype *devWt; 
 	bool swap = false;													//flag used for swapping between the double arrays
 	
 	CUDAMAKE(devrho); CUDAMAKE(devu); CUDAMAKE(devv); CUDAMAKE(devw); CUDAMAKE(devp); CUDAMAKE(deve); CUDAMAKE(devH); CUDAMAKE(devT);
 	CUDAMAKE(devVsqr); CUDAMAKE(devCsqr);
 	CUDAMAKE5(devW);
-	CUDAMAKE5(devDW1); CUDAMAKE5(devDW2); CUDAMAKE5(devDW3); 
-	CUDAMAKE5(devW0);
+	CUDAMAKE5(devWt);
 	
 	//host variables
 	ptype tc, tv, dt;
 	ptype *Vsqr = new ptype[Np];
 	ptype *Csqr = new ptype[Np];
-	ptype Et[TARGET_ITER], timeTotal[TARGET_ITER];
+	ptype Et[TARGET_ITER], timeTotal[TARGET_ITER], Prms[TARGET_ITER];
 	ptype T=0;
 	ptype Crms;
 	ptype Vmax;
 	ptype dx = 2*PI/N;
 	
 	//calculating thread and block count
-	int gridDim = ceil((float)N/BLOCK_DIM); 
+	int gridDim = ceil((float)N/BLOCK_DIM);
 	dim3 threadsPerBlock(BLOCK_DIM, BLOCK_DIM, BLOCK_DIM); 
 	dim3 blocksPerGrid(gridDim, gridDim, gridDim);
 	
@@ -103,9 +100,11 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 		
 	//calling kernel function for converting primitive variables to conservative
 	kernel_p2qc<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW);
+	cudaMemcpy(devWt, devW, arrSize*5, cudaMemcpyDeviceToDevice);		
 	cudaThreadSynchronize();
 	
-	for(int iter=0;iter<TARGET_ITER;iter++)
+	int iter=0;
+	for(;iter<TARGET_ITER;iter++)
 	{
 		
 		//calculation of time
@@ -124,39 +123,55 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 		tc = dx/(Vmax + Crms);
 		tv = dx*dx/(2.0*mu);
 		dt = tv*tc/(tv+tc)*0.5;
+		
+		/////////////////
+		//to do ----- copy Wt to W
 				
 		
 		//RK-4 Scheme: calculating intermediate fluxes
-		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW , devDW1, 0.5*dt, swap);
+		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW, devWt, 0.5*dt, dt, swap);
 		cudaThreadSynchronize();
 		swap = !swap;
-		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW, devDW2, 0.5*dt, swap);
+		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW, devWt, 0.5*dt, dt*2, swap);
 		cudaThreadSynchronize();
 		swap = !swap;
-		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devW, devDW3, 1.0*dt, swap);
+		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW, devWt, dt, dt*2, swap);
+		cudaThreadSynchronize();
+		swap = !swap;
+		kernel_derives<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW, devWt, 0, dt, swap, true);
 		cudaThreadSynchronize();
 		swap = !swap;
 		
-		cudaMemcpy(devW0, devW, arrSize*5, cudaMemcpyDeviceToDevice);		
-		
-		kernel_derivesF<<<blocksPerGrid, threadsPerBlock>>>(devrho, devu, devv, devw, devp, deve, devH, devT, devVsqr, devCsqr, devW, devW0, devDW1, devDW2, devDW3, dt, swap);
-		cudaThreadSynchronize();
-		swap = !swap;
+		cudaMemcpy(devW, devWt, arrSize*5, cudaMemcpyDeviceToDevice);		
 		
 		#ifdef PRINT_ENERGY
 			//calculation of total energy
 			cudaMemcpy(Vsqr, devVsqr, arrSize, cudaMemcpyDeviceToHost);
+			cudaMemcpy(p, devp, arrSize, cudaMemcpyDeviceToHost);
 			cudaThreadSynchronize();
+			
+			ptype Pmean = sum(p)/Np;
+			Prms[iter] = 0;
+			
 			Et[iter] = 0;
 			T += dt;
 			FOR(i, Np)
 			{
 				Et[iter] += Vsqr[i];
+				Prms[iter] += (p[i] - Pmean)*(p[i] - Pmean);
 			}
 			Et[iter] /= Np;
+			Prms[iter] /= Np;
+			Prms[iter] = sqrt(Prms[iter]);
 			timeTotal[iter] = T;
 			/**/
 		#endif
+		
+		/////
+		if(iter % 10 == 0)
+			printf("iteration: %d,\ttime : %f,\t energy = %f,\t Prms = %f\n", iter, T, Et[iter], Prms[iter]);
+		if(T>TARGET_TIME)
+			break;
 	}
 	
 	printf("Last Cuda Error : %d\n", cudaGetLastError());
@@ -185,8 +200,7 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	//freeing memory
 	CUDAKILL(devrho); CUDAKILL(devu); CUDAKILL(devv); CUDAKILL(devw); CUDAKILL(devp); CUDAKILL(deve); CUDAKILL(devH); CUDAKILL(devT);
 	CUDAKILL(devW);
-	CUDAKILL(devDW1); CUDAKILL(devDW2); CUDAKILL(devDW3);
-	CUDAKILL(devW0);
+	CUDAKILL(devWt);
 	
 	//printing time-energy data to file
 	#ifdef PRINT_ENERGY	
@@ -194,8 +208,8 @@ void cudaIterate(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype kt, p
 	fileName = fileName + TAG + ".csv";
 	fstream energyFile(fileName.c_str(), ios::out | ios::trunc);
 	energyFile<<"Time, Results\n";
-	FOR(i, TARGET_ITER)
-		energyFile<<timeTotal[i]<<", "<<Et[i]<<"\n";
+	FOR(i, iter)
+		energyFile<<timeTotal[i]<<", "<<Et[i]<<", "<<Prms[i]<<"\n";
 	energyFile.close();
 	#endif
 	
@@ -225,7 +239,7 @@ __global__ void kernel_p2qc(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, 
 }
 
 
-__global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *W, ptype *DW, ptype f, bool swap)
+__global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, ptype *W, ptype *Wt, ptype f, ptype dt, bool swap, bool ifFinalize )
 {
 
 	///////// Calculation of all relevant indices
@@ -599,11 +613,18 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 			) - qxx - qyy - qzz;
 	
 	
-	DW[In] 			 = - C1;
-	DW[devNp*1 + In] = -(C2 + px - V2);
-	DW[devNp*2 + In] = -(C3 + py - V3);
-	DW[devNp*3 + In] = -(C4 + pz - V4);
-	DW[devNp*4 + In] = -(C5 - V5);
+	int iX_ = (blockDim.x * blockIdx.x + threadIdx.x);
+	int iY_ = (blockDim.y * blockIdx.y + threadIdx.y);
+	int iZ_ = (blockDim.z * blockIdx.z + threadIdx.z);
+	
+	if(iX_ >= 0 && iX_ < devN && iY_ >= 0 && iY_ < devN && iZ_ >= 0 && iZ_ < devN)
+	{
+		Wt[In] 			 += - (dt/6.0)* C1;
+		Wt[devNp*1 + In] += - (dt/6.0)*(C2 + px - V2);
+		Wt[devNp*2 + In] += - (dt/6.0)*(C3 + py - V3);
+		Wt[devNp*3 + In] += - (dt/6.0)*(C4 + pz - V4);
+		Wt[devNp*4 + In] += - (dt/6.0)*(C5 - V5);
+	}
 	
 	ptype w1 = W[In] - f*C1;
 	ptype w2 = W[devNp*1 + In] - f*(C2 + px - V2);
@@ -611,413 +632,14 @@ __global__ void kernel_derives(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *
 	ptype w4 = W[devNp*3 + In] - f*(C4 + pz - V4);
 	ptype w5 = W[devNp*4 + In] - f*(C5 - V5);
 	
-	ptype rhoL = w1;
-	ptype uL = w2/w1;
-	ptype vL = w3/w1;
-	ptype wL = w4/w1;
-	ptype eL = w5/w1;
-	ptype VsqrL = (uL*uL + vL*vL + wL*wL);
-	ptype pL = (rhoL*(GAMMA-1))*(eL - 0.5*VsqrL);
-	
-	rho[(!swap)*devNp+In] = rhoL;
-	u[(!swap)*devNp+In] = uL;
-	v[(!swap)*devNp+In] = vL;
-	w[(!swap)*devNp+In] = wL;
-	e[(!swap)*devNp+In] = eL;
-	p[(!swap)*devNp+In] = pL;
-	H[(!swap)*devNp+In] = eL + pL/rhoL;
-	T[(!swap)*devNp+In] = pL/(rhoL*R);
-	//Vsqr[(!swap)*devNp+In] = VsqrL;
-	//Csqr[(!swap)*devNp+In] = GAMMA * GAMMA * pL * pL / (rhoL*rhoL);
-
-}
-
-
-__global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype *p, ptype *e, ptype *H, ptype *T, ptype *Vsqr, ptype *Csqr, 
-					ptype *W, ptype *W0, ptype *DW1, ptype *DW2, ptype *DW3, ptype dt, bool swap)
-{
-
-	///////// Calculation of all relevant indices
-	int iX1 = (blockDim.x * blockIdx.x + threadIdx.x - BLOCK_DIM/2 + devN)%devN;
-	int iY1 = (blockDim.y * blockIdx.y + threadIdx.y - BLOCK_DIM/2 + devN)%devN;
-	int iZ1 = (blockDim.z * blockIdx.z + threadIdx.z - BLOCK_DIM/2 + devN)%devN;
-	int iX2 = (blockDim.x * blockIdx.x + threadIdx.x + BLOCK_DIM/2 + devN)%devN;
-	int iY2 = (blockDim.y * blockIdx.y + threadIdx.y + BLOCK_DIM/2 + devN)%devN;
-	int iZ2 = (blockDim.z * blockIdx.z + threadIdx.z + BLOCK_DIM/2 + devN)%devN;
-	
-	int In111 = iZ1*devN*devN + iY1*devN + iX1;
-	int In112 = iZ1*devN*devN + iY1*devN + iX2;
-	int In121 = iZ1*devN*devN + iY2*devN + iX1;
-	int In122 = iZ1*devN*devN + iY2*devN + iX2;
-	int In211 = iZ2*devN*devN + iY1*devN + iX1;
-	int In212 = iZ2*devN*devN + iY1*devN + iX2;
-	int In221 = iZ2*devN*devN + iY2*devN + iX1;
-	int In222 = iZ2*devN*devN + iY2*devN + iX2;
-	
-	int iX = (blockDim.x * blockIdx.x + threadIdx.x)%devN;
-	int iY = (blockDim.y * blockIdx.y + threadIdx.y)%devN;
-	int iZ = (blockDim.z * blockIdx.z + threadIdx.z)%devN;
-	int In = iZ*devN*devN + iY*devN + iX;
-		
-	int tx = threadIdx.x + BLOCK_DIM/2;	
-	int ty = threadIdx.y + BLOCK_DIM/2;	
-	int tz = threadIdx.z + BLOCK_DIM/2;	
-	
-	//declaring shared memory
-	__shared__ ptype sh[BLOCK_DIM*2][BLOCK_DIM*2][BLOCK_DIM*2];
-	float dx = 2*PI/devN;
-	
-	__syncthreads();	
-	
-	//copying u into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = u[swap*devNp+In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = u[swap*devNp+In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = u[swap*devNp+In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = u[swap*devNp+In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = u[swap*devNp+In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = u[swap*devNp+In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = u[swap*devNp+In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = u[swap*devNp+In222];
-	
-	__syncthreads();
-	
-	
-	//derivatives of u
-	ptype _u = sh[tz][ty][tx];
-	ptype ux = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype uy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype uz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype uxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype uyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype uzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
-	ptype uxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
-				)/(dx*dx);
-	ptype uyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
-				)/(dx*dx);
-	ptype uzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
-				)/(dx*dx);
-				
-	__syncthreads();	
-	
-	//copying v into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = v[swap*devNp+In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[swap*devNp+In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[swap*devNp+In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[swap*devNp+In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = v[swap*devNp+In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = v[swap*devNp+In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = v[swap*devNp+In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = v[swap*devNp+In222];
-	
-	__syncthreads();
-	
-	//derivatives of v
-	ptype _v = sh[tz][ty][tx];
-	ptype vx = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype vy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype vz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype vxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype vyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype vzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
-	ptype vxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
-				)/(dx*dx);
-	ptype vyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
-				)/(dx*dx);
-	ptype vzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
-				)/(dx*dx);
-				
-	__syncthreads();
-	
-	
-	//copying w into shared memory	
-	sh[threadIdx.z][threadIdx.y][threadIdx.x] = w[swap*devNp+In111];
-	sh[threadIdx.z][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[swap*devNp+In112];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[swap*devNp+In121];
-	sh[threadIdx.z][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[swap*devNp+In122];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x] = w[swap*devNp+In211];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y][threadIdx.x+BLOCK_DIM] = w[swap*devNp+In212];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x] = w[swap*devNp+In221];
-	sh[threadIdx.z+BLOCK_DIM][threadIdx.y+BLOCK_DIM][threadIdx.x+BLOCK_DIM] = w[swap*devNp+In222];
-	
-	__syncthreads();
-	
-	//derivatives of w
-	ptype _w = sh[tz][ty][tx];
-	ptype wx = D(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/dx;
-	ptype wy = D(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/dx;
-	ptype wz = D(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/dx;
-	ptype wxx = DD(sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3])/(dx*dx);
-	ptype wyy = DD(sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx])/(dx*dx);
-	ptype wzz = DD(sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx])/(dx*dx);
-	ptype wxy = D(
-					D(sh[tz][ty-3][tx-3], sh[tz][ty-3][tx-2], sh[tz][ty-3][tx-1], sh[tz][ty-3][tx+1], sh[tz][ty-3][tx+2], sh[tz][ty-3][tx+3]),
-					D(sh[tz][ty-2][tx-3], sh[tz][ty-2][tx-2], sh[tz][ty-2][tx-1], sh[tz][ty-2][tx+1], sh[tz][ty-2][tx+2], sh[tz][ty-2][tx+3]),
-					D(sh[tz][ty-1][tx-3], sh[tz][ty-1][tx-2], sh[tz][ty-1][tx-1], sh[tz][ty-1][tx+1], sh[tz][ty-1][tx+2], sh[tz][ty-1][tx+3]),
-					D(sh[tz][ty+1][tx-3], sh[tz][ty+1][tx-2], sh[tz][ty+1][tx-1], sh[tz][ty+1][tx+1], sh[tz][ty+1][tx+2], sh[tz][ty+1][tx+3]),
-					D(sh[tz][ty+2][tx-3], sh[tz][ty+2][tx-2], sh[tz][ty+2][tx-1], sh[tz][ty+2][tx+1], sh[tz][ty+2][tx+2], sh[tz][ty+2][tx+3]),
-					D(sh[tz][ty+3][tx-3], sh[tz][ty+3][tx-2], sh[tz][ty+3][tx-1], sh[tz][ty+3][tx+1], sh[tz][ty+3][tx+2], sh[tz][ty+3][tx+3])
-				)/(dx*dx);
-	ptype wyz = D(
-					D(sh[tz-3][ty-3][tx], sh[tz-2][ty-3][tx], sh[tz-1][ty-3][tx], sh[tz+1][ty-3][tx], sh[tz+2][ty-3][tx], sh[tz+3][ty-3][tx]),
-					D(sh[tz-3][ty-2][tx], sh[tz-2][ty-2][tx], sh[tz-1][ty-2][tx], sh[tz+1][ty-2][tx], sh[tz+2][ty-2][tx], sh[tz+3][ty-2][tx]),
-					D(sh[tz-3][ty-1][tx], sh[tz-2][ty-1][tx], sh[tz-1][ty-1][tx], sh[tz+1][ty-1][tx], sh[tz+2][ty-1][tx], sh[tz+3][ty-1][tx]),
-					D(sh[tz-3][ty+1][tx], sh[tz-2][ty+1][tx], sh[tz-1][ty+1][tx], sh[tz+1][ty+1][tx], sh[tz+2][ty+1][tx], sh[tz+3][ty+1][tx]),
-					D(sh[tz-3][ty+2][tx], sh[tz-2][ty+2][tx], sh[tz-1][ty+2][tx], sh[tz+1][ty+2][tx], sh[tz+2][ty+2][tx], sh[tz+3][ty+2][tx]),
-					D(sh[tz-3][ty+3][tx], sh[tz-2][ty+3][tx], sh[tz-1][ty+3][tx], sh[tz+1][ty+3][tx], sh[tz+2][ty+3][tx], sh[tz+3][ty+3][tx])
-				)/(dx*dx);
-	ptype wzx = D(
-					D(sh[tz-3][ty][tx-3], sh[tz-2][ty][tx-3], sh[tz-1][ty][tx-3], sh[tz+1][ty][tx-3], sh[tz+2][ty][tx-3], sh[tz+3][ty][tx-3]),
-					D(sh[tz-3][ty][tx-2], sh[tz-2][ty][tx-2], sh[tz-1][ty][tx-2], sh[tz+1][ty][tx-2], sh[tz+2][ty][tx-2], sh[tz+3][ty][tx-2]),
-					D(sh[tz-3][ty][tx-1], sh[tz-2][ty][tx-1], sh[tz-1][ty][tx-1], sh[tz+1][ty][tx-1], sh[tz+2][ty][tx-1], sh[tz+3][ty][tx-1]),
-					D(sh[tz-3][ty][tx+1], sh[tz-2][ty][tx+1], sh[tz-1][ty][tx+1], sh[tz+1][ty][tx+1], sh[tz+2][ty][tx+1], sh[tz+3][ty][tx+1]),
-					D(sh[tz-3][ty][tx+2], sh[tz-2][ty][tx+2], sh[tz-1][ty][tx+2], sh[tz+1][ty][tx+2], sh[tz+2][ty][tx+2], sh[tz+3][ty][tx+2]),
-					D(sh[tz-3][ty][tx+3], sh[tz-2][ty][tx+3], sh[tz-1][ty][tx+3], sh[tz+1][ty][tx+3], sh[tz+2][ty][tx+3], sh[tz+3][ty][tx+3])
-				)/(dx*dx);
-	
-	ptype px = D(	p[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], p[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], p[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)],   
-					p[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], p[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], p[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx);
-	ptype py = D(	p[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], p[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], p[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)],
-					p[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], p[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], p[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx);
-	ptype pz = D(	p[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], p[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], p[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)],
-					p[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], p[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], p[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx);
-	
-	ptype qxx = -devkt * DD(	T[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], T[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], T[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], T[swap*devNp+In],  
-					T[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], T[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], T[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)])/(dx*dx);
-	ptype qyy = -devkt * DD(	T[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], T[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], T[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], T[swap*devNp+In], 
-					T[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], T[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)], T[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)])/(dx*dx);
-	ptype qzz = -devkt * DD(	T[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], T[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], T[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], T[swap*devNp+In], 
-					T[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], T[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], T[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)])/(dx*dx);
-					
-	
-	//convective flux
-	ptype C1 = 	(
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	rho[swap*devNp+In],  
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					1, 1, 1, 1, 1, 1, 1
-					)
-				+
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	rho[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					1, 1, 1, 1, 1, 1, 1
-					)
-				+
-				DABC(
-					rho[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
-					
-					1, 1, 1, 1, 1, 1, 1
-					)
-				)/dx;
-	
-	ptype C2 = 	(
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	rho[swap*devNp+In],  
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	rho[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					u[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], 	u[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], 	u[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], 	u[swap*devNp+In], 
-					u[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], 	u[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	u[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
-					
-					u[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	u[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], u[swap*devNp+In], 
-					u[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	u[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	u[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
-					)
-				)/dx;
-				
-	ptype C3 = 	(
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	rho[swap*devNp+In],  
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					v[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	v[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	v[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	v[swap*devNp+In],  
-					v[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	v[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	v[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	rho[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
-					
-					v[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	v[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	v[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	v[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
-					)
-				)/dx;				
-				
-	ptype C4 = 	(
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	rho[swap*devNp+In],  
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					sh[tz][ty][tx-3], sh[tz][ty][tx-2], sh[tz][ty][tx-1], sh[tz][ty][tx], sh[tz][ty][tx+1], sh[tz][ty][tx+2], sh[tz][ty][tx+3]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	rho[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					sh[tz][ty-3][tx], sh[tz][ty-2][tx], sh[tz][ty-1][tx], sh[tz][ty][tx], sh[tz][ty+1][tx], sh[tz][ty+2][tx], sh[tz][ty+3][tx]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx]
-					)
-				)/dx;
-				
-	ptype C5 = 	(
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	rho[swap*devNp+In],  
-					rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	rho[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	u[swap*devNp+In],  
-					u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	u[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)], 
-					
-					H[swap*devNp+(iZ*devN*devN + iY*devN + (iX-3+devN)%devN)], 	H[swap*devNp+(iZ*devN*devN + iY*devN + (iX-2+devN)%devN)], 	H[swap*devNp+(iZ*devN*devN + iY*devN + (iX-1+devN)%devN)], 	H[swap*devNp+In],  
-					H[swap*devNp+(iZ*devN*devN + iY*devN + (iX+1+devN)%devN)], 	H[swap*devNp+(iZ*devN*devN + iY*devN + (iX+2+devN)%devN)], 	H[swap*devNp+(iZ*devN*devN + iY*devN + (iX+3+devN)%devN)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], rho[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	rho[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					v[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], v[swap*devNp+In], 
-					v[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], v[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	v[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)],
-					
-					H[swap*devNp+(iZ*devN*devN + ((iY-3+devN)%devN)*devN + iX)], 	H[swap*devNp+(iZ*devN*devN + ((iY-2+devN)%devN)*devN + iX)], 	H[swap*devNp+(iZ*devN*devN + ((iY-1+devN)%devN)*devN + iX)], 	H[swap*devNp+In], 
-					H[swap*devNp+(iZ*devN*devN + ((iY+1+devN)%devN)*devN + iX)], 	H[swap*devNp+(iZ*devN*devN + ((iY+2+devN)%devN)*devN + iX)],	H[swap*devNp+(iZ*devN*devN + ((iY+3+devN)%devN)*devN + iX)]
-					)
-				+
-				DABC(
-					rho[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+In], 
-					rho[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], rho[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)],
-					
-					sh[tz-3][ty][tx], sh[tz-2][ty][tx], sh[tz-1][ty][tx], sh[tz][ty][tx], sh[tz+1][ty][tx], sh[tz+2][ty][tx], sh[tz+3][ty][tx],
-					
-					H[swap*devNp+(((iZ-3+devN)%devN)*devN*devN + iY*devN + iX)], 	H[swap*devNp+(((iZ-2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[swap*devNp+(((iZ-1+devN)%devN)*devN*devN + iY*devN + iX)], H[swap*devNp+In], 
-					H[swap*devNp+(((iZ+1+devN)%devN)*devN*devN + iY*devN + iX)], 	H[swap*devNp+(((iZ+2+devN)%devN)*devN*devN + iY*devN + iX)], 	H[swap*devNp+(((iZ+3+devN)%devN)*devN*devN + iY*devN + iX)]
-					)
-				)/dx;
-					
-					
-	//viscous flux
-	ptype V2 = devmu*( 2*uxx + uyy + uzz + vxy + wzx - 2.0/3.0*(uxx + vxy + wzx) );
-	ptype V3 = devmu*( 2*vyy + vxx + vzz + uxy + wyz - 2.0/3.0*(uxy + vyy + wyz) );
-	ptype V4 = devmu*( 2*wzz + wyy + wxx + vyz + uzx - 2.0/3.0*(uzx + vyz + wzz) );
-	ptype V5 = 2*devmu*(  
-			(uxx - (uxx+vxy+wzx)/3.0)*_u	+  	(ux - (ux+vy+wz)/3.0)*ux  
-				+	(0.5*(uxy+vxx))*_v	+	(0.5*(uy+vx))*vx  
-					+	(0.5*(uzx+wxx))*_w	+	(0.5*(uz+wx))*wx  
-			+	(0.5*(uyy+vxy))*_u		+	(0.5*(uy+vx))*uy  
-				+	(vyy - (uxy+vyy+wyz)/3.0)*_v	+	(vy - (ux+vy+wz)/3.0)*vy  
-					+	(0.5*(wyy+vyz))*_w		+	(0.5*(wy+vz))*wy	 
-			+	(0.5*(uzz+wzx))*_u		+	(0.5*(uz+wx))*uz  	
-				+	(0.5*(wyz+vzz))*_v	+	(0.5*(wy+vz))*vz	 
-					+	(wzz - (uzx+vyz+wzz)/3.0)*_w		+	(wz - (ux+vy+wz)/3.0)*wz  
-			) - qxx - qyy - qzz;
-	
-	ptype DW4_1	= - C1;
-	ptype DW4_2	= -(C2 + px - V2);
-	ptype DW4_3	= -(C3 + py - V3);
-	ptype DW4_4	= -(C4 + pz - V4);
-	ptype DW4_5	= -(C5 - V5);
-	
-	ptype w1	= W0[In] 		+ dt/6.0*(DW1[In]+2*DW2[In]+2*DW3[In]+DW4_1);
-	ptype w2	= W0[devNp*1+In] + dt/6.0*(DW1[devNp*1+In]+2*DW2[devNp*1+In]+2*DW3[devNp*1+In]+DW4_2);
-	ptype w3	= W0[devNp*2+In] + dt/6.0*(DW1[devNp*2+In]+2*DW2[devNp*2+In]+2*DW3[devNp*2+In]+DW4_3);
-	ptype w4	= W0[devNp*3+In] + dt/6.0*(DW1[devNp*3+In]+2*DW2[devNp*3+In]+2*DW3[devNp*3+In]+DW4_4);
-	ptype w5	= W0[devNp*4+In] + dt/6.0*(DW1[devNp*4+In]+2*DW2[devNp*4+In]+2*DW3[devNp*4+In]+DW4_5);
+	if(ifFinalize)
+	{
+		w1 = Wt[In];
+		w2 = Wt[devNp*1 + In];
+		w3 = Wt[devNp*2 + In];
+		w4 = Wt[devNp*3 + In];
+		w5 = Wt[devNp*4 + In];
+	}
 	
 	ptype rhoL = w1;
 	ptype uL = w2/w1;
@@ -1037,15 +659,8 @@ __global__ void kernel_derivesF(ptype *rho, ptype *u, ptype *v, ptype *w, ptype 
 	T[(!swap)*devNp+In] = pL/(rhoL*R);
 	Vsqr[(!swap)*devNp+In] = VsqrL;
 	Csqr[(!swap)*devNp+In] = GAMMA * GAMMA * pL * pL / (rhoL*rhoL);
-	
-	W[In] 			= w1;
-	W[devNp*1+In] 	= w2;
-	W[devNp*2+In] 	= w3;
-	W[devNp*3+In] 	= w4;
-	W[devNp*4+In] 	= w5;
 
 }
-
 
 //device functions
 __device__ ptype D(ptype A_3, ptype A_2, ptype A_1, ptype A1, ptype A2, ptype A3)

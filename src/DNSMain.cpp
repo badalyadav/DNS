@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 	timeRecord.N = N;
 	
 	cudaIterate(problemData->rho, problemData->u, problemData->v, problemData->w, problemData->p, problemData->kt, problemData->mu);
-	cpuIterate();
+	//cpuIterate();
 	
 	return 0;
 }
@@ -78,7 +78,7 @@ void initProblem()
 	problemData->mu = (problemData->urms * problemData->lam * problemData->rho0)/problemData->Re ;
 	problemData->kt = problemData->mu * Cp/Pr;
 	problemData->tau = problemData->lam/problemData->urms;
-	
+		
 	
 	//reading velocity field
 	double *u = new double[Np];
